@@ -1,0 +1,123 @@
+import os
+import pandas as pd
+
+# 强制使用 Agg 后端，避免 Tkinter 错误
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
+from flask import Flask, render_template, request, url_for
+
+app = Flask(__name__)
+
+# 使用内置 ggplot 风格增强可读性
+plt.style.use('ggplot')
+
+# 数据存放路径
+DATA_DIR   = os.path.join(os.path.dirname(__file__), 'data')
+CSV_PATH   = os.path.join(DATA_DIR, 'submissions.csv')
+CHART_PATH = os.path.join('static', 'summary.png')
+
+# 问题键
+QUESTION_KEYS = [
+    "Q1a","Q1b","Q1c",
+    "Q2a","Q2b1","Q2b2",
+    "Q3a1","Q3a2","Q3b1","Q3b2"
+]
+# 三种方法标签
+METHOD_LABELS = ["Not using AI", "Using some AI", "Using refined AI"]
+
+# 标准答案（去掉千分位逗号）
+CORRECT_ANSWERS = {
+    "Q1a": 2207682.7,
+    "Q1b": 822208.6,
+    "Q1c": 5120.3,
+    "Q2a": 146640.1,
+    "Q2b1": 3330.1,
+    "Q2b2": 65.0,
+    "Q3a1": 1533691.5,
+    "Q3a2": 2297.9,
+    "Q3b1": 1768829.7,
+    "Q3b2": 14.6
+}
+
+os.makedirs(DATA_DIR, exist_ok=True)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/submit', methods=['POST'])
+def submit():
+    if os.path.exists(CSV_PATH):
+        df = pd.read_csv(CSV_PATH)
+    else:
+        df = pd.DataFrame(columns=['question', 'method', 'answer'])
+
+    new_rows = []
+    for q in QUESTION_KEYS:
+        for i, method in enumerate(METHOD_LABELS, start=1):
+            answer = request.form.get(f"{q}_answer_{i}")
+            try:
+                answer_val = float(answer)
+            except (TypeError, ValueError):
+                answer_val = None
+            new_rows.append({
+                'question': q,
+                'method': method,
+                'answer': answer_val
+            })
+
+    df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
+    df.to_csv(CSV_PATH, index=False)
+    return render_template('thanks.html')
+
+@app.route('/results')
+def results():
+    df = pd.read_csv(CSV_PATH)
+
+    n_questions = len(QUESTION_KEYS)
+    n_methods   = len(METHOD_LABELS)
+
+    fig, axes = plt.subplots(
+        n_questions, n_methods,
+        figsize=(n_methods * 4, n_questions * 3),
+        squeeze=False
+    )
+
+    # 更新：移除 (Teacher Only)
+    fig.suptitle('Submission Summary', fontsize=16, y=1.02)
+
+    for i, q in enumerate(QUESTION_KEYS):
+        correct = CORRECT_ANSWERS.get(q)
+        for j, method in enumerate(METHOD_LABELS):
+            ax   = axes[i][j]
+            data = df[(df['question'] == q) & (df['method'] == method)]['answer'].dropna()
+            if not data.empty:
+                ax.hist(data, bins=15, edgecolor='black', alpha=0.7)
+                mean_val = data.mean()
+                ax.axvline(mean_val, color='blue', linestyle='-', linewidth=1.5, alpha=0.6, label='Mean')
+            else:
+                ax.text(0.5, 0.5, 'No data', ha='center', va='center')
+            if correct is not None:
+                ax.axvline(correct, color='black', linestyle='--', linewidth=1.5, alpha=0.6, label='Correct Answer')
+            if (not data.empty) or (correct is not None):
+                ax.legend(fontsize=7)
+            ax.set_title(f"{q} - {method}", fontsize=9)
+            if j == 0:
+                ax.set_ylabel('Count')
+            if i == n_questions - 1:
+                ax.set_xlabel('Answer')
+            ax.grid(True, axis='y', linestyle='--', alpha=0.6)
+            ax.tick_params(axis='both', labelsize=7)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(app.root_path, CHART_PATH), dpi=150)
+    plt.close(fig)
+
+    chart_url = url_for('static', filename='summary.png')
+    return render_template('results.html', chart_url=chart_url)
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=True)

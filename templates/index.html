@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Classroom Poll</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h1>Classroom Poll</h1>
+
+  <!-- === 在这里插入指示 === -->
+  <p style="color: #333; font-size: 1.1em;">
+    <strong>Please express all numeric answers to one decimal place.</strong><br><br>
+  
+    <!-- 这一行变红 -->
+    <span style="color: red; font-weight: bold;">
+    Please remove all dollar signs ($)
+    </span><br><br>
+  
+    For example, if your answer is $40,000, you should just input <code>40,000</code>.<br><br>
+    <span style="color: red; font-weight: bold;">
+    Please DO NOT input Percentage signs (%)
+    </span><br><br>
+
+    For example, if your answer is 15%, you should just input <code>15</code>.
+  </p>
+  
+  
+
+  <form action="/submit" method="post">
+    {% set questions = [
+      ("Q1a", "Question 1a"),
+      ("Q1b", "Question 1b"),
+      ("Q1c", "Question 1c"),
+      ("Q2a", "Question 2a"),
+      ("Q2b1", "Question 2b.i"),
+      ("Q2b2", "Question 2b.ii"),
+      ("Q3a1", "Question 3a.i"),
+      ("Q3a2", "Question 3a.ii"),
+      ("Q3b1", "Question 3b.i"),
+      ("Q3b2", "Question 3b.ii")
+    ] %}
+    {% set method_labels = ["Not using AI", "Using some AI", "Using refined AI"] %}
+    {% for key, label in questions %}
+      <fieldset>
+        <legend>{{ label }}</legend>
+        {% for i in range(3) %}
+          <div class="response-group">
+            <label>{{ method_labels[i] }}:</label>
+            <input
+              type="text"
+              name="{{ key }}_answer_{{ i+1 }}"
+              placeholder="Enter your answer"
+              required
+            >
+          </div>
+        {% endfor %}
+      </fieldset>
+      <hr>
+    {% endfor %}
+    <button type="submit">Submit All Responses</button>
+  </form>
+</body>
+</html>
