@@ -17,16 +17,14 @@
     Please remove all dollar signs ($)
     </span><br><br>
   
-    For example, if your answer is $40,000, you should just input <code>40,000</code>.<br><br>
+    For example, if your answer is $40,000, you should just input <code>40000.0</code>.<br><br>
     <span style="color: red; font-weight: bold;">
-    Please DO NOT input Percentage signs (%)
+    Please DO NOT input percentage signs (%)
     </span><br><br>
 
-    For example, if your answer is 15%, you should just input <code>15</code>.
+    For example, if your answer is 15%, you should just input <code>15.0</code>.
   </p>
   
-  
-
   <form action="/submit" method="post">
     {% set questions = [
       ("Q1a", "Question 1a"),
@@ -46,12 +44,14 @@
         <legend>{{ label }}</legend>
         {% for i in range(3) %}
           <div class="response-group">
-            <label>{{ method_labels[i] }}:</label>
+            <label for="{{ key }}_answer_{{ i+1 }}">{{ method_labels[i] }}:</label>
             <input
-              type="text"
+              type="number"
               name="{{ key }}_answer_{{ i+1 }}"
-              placeholder="Enter your answer"
+              id="{{ key }}_answer_{{ i+1 }}"
+              step="any"
               required
+              placeholder="Enter your answer"
             >
           </div>
         {% endfor %}
