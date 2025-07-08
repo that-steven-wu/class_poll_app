@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -10,4 +10,26 @@
   <img src="{{ chart_url }}" alt="Summary Chart" />
   <p><a href="{{ url_for('results') }}">Refresh Chart</a></p>
 </body>
+</html> -->
+
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Submission Summary</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h1 style="text-align: center;">Submission Summary</h1>
+
+  {% if chart_url %}
+    <div style="text-align: center;">
+      <img src="{{ chart_url }}" alt="Histogram summary" style="max-width: 100%; height: auto;">
+    </div>
+  {% else %}
+    <p style="text-align: center;">{{ message }}</p>
+  {% endif %}
+</body>
 </html>
+

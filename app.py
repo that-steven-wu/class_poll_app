@@ -41,6 +41,7 @@ CORRECT_ANSWERS = {
     "Q3b2": 14.6
 }
 
+# 确保 data 目录存在
 os.makedirs(DATA_DIR, exist_ok=True)
 
 @app.route('/')
@@ -49,11 +50,13 @@ def index():
 
 @app.route('/submit', methods=['POST'])
 def submit():
+    # 读取或初始化 DataFrame
     if os.path.exists(CSV_PATH):
         df = pd.read_csv(CSV_PATH)
     else:
         df = pd.DataFrame(columns=['question', 'method', 'answer'])
 
+    # 收集新提交
     new_rows = []
     for q in QUESTION_KEYS:
         for i, method in enumerate(METHOD_LABELS, start=1):
@@ -62,11 +65,7 @@ def submit():
                 answer_val = float(answer)
             except (TypeError, ValueError):
                 answer_val = None
-            new_rows.append({
-                'question': q,
-                'method': method,
-                'answer': answer_val
-            })
+            new_rows.append({'question': q, 'method': method, 'answer': answer_val})
 
     df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True)
     df.to_csv(CSV_PATH, index=False)
@@ -74,45 +73,46 @@ def submit():
 
 @app.route('/results')
 def results():
-    df = pd.read_csv(CSV_PATH)
+    # 如果没有任何提交，先给出提示
+    if not os.path.exists(CSV_PATH):
+        return render_template('results.html', chart_url=None,
+                               message="There are no submissions yet. Please submit once on the homepage before checking the statistics.")
 
+    df = pd.read_csv(CSV_PATH)
     n_questions = len(QUESTION_KEYS)
     n_methods   = len(METHOD_LABELS)
 
-    fig, axes = plt.subplots(
-        n_questions, n_methods,
-        figsize=(n_methods * 4, n_questions * 3),
-        squeeze=False
-    )
+    # 配置画布尺寸
+    fig_w, fig_h = n_methods * 5, n_questions * 3
+    fig, axes = plt.subplots(n_questions, n_methods, figsize=(fig_w, fig_h), squeeze=False)
 
-    # 更新：移除 (Teacher Only)
-    fig.suptitle('Submission Summary', fontsize=16, y=1.02)
-
+    # 遍历绘制每个子图
     for i, q in enumerate(QUESTION_KEYS):
         correct = CORRECT_ANSWERS.get(q)
         for j, method in enumerate(METHOD_LABELS):
-            ax   = axes[i][j]
+            ax = axes[i][j]
             data = df[(df['question'] == q) & (df['method'] == method)]['answer'].dropna()
             if not data.empty:
-                ax.hist(data, bins=15, edgecolor='black', alpha=0.7)
+                ax.hist(data, bins=12, edgecolor='black', alpha=0.7)
                 mean_val = data.mean()
-                ax.axvline(mean_val, color='blue', linestyle='-', linewidth=1.5, alpha=0.6, label='Mean')
+                ax.axvline(mean_val, color='blue', linestyle='-', linewidth=1.8, alpha=0.6, label='Mean')
             else:
-                ax.text(0.5, 0.5, 'No data', ha='center', va='center')
+                ax.text(0.5, 0.5, 'No data', ha='center', va='center', fontsize=10)
             if correct is not None:
-                ax.axvline(correct, color='black', linestyle='--', linewidth=1.5, alpha=0.6, label='Correct Answer')
+                ax.axvline(correct, color='black', linestyle='--', linewidth=1.8, alpha=0.6, label='Correct Answer')
             if (not data.empty) or (correct is not None):
-                ax.legend(fontsize=7)
-            ax.set_title(f"{q} - {method}", fontsize=9)
+                ax.legend(fontsize=8)
+            ax.set_title(f"{q} - {method}", fontsize=10)
             if j == 0:
-                ax.set_ylabel('Count')
+                ax.set_ylabel('Count', fontsize=10)
             if i == n_questions - 1:
-                ax.set_xlabel('Answer')
+                ax.set_xlabel('Answer', fontsize=10)
             ax.grid(True, axis='y', linestyle='--', alpha=0.6)
-            ax.tick_params(axis='both', labelsize=7)
+            ax.tick_params(axis='both', labelsize=8)
 
-    plt.tight_layout()
-    plt.savefig(os.path.join(app.root_path, CHART_PATH), dpi=150)
+    # 布局和保存
+    plt.tight_layout(pad=1.5, h_pad=1.2, w_pad=0.8)
+    plt.savefig(os.path.join(app.root_path, CHART_PATH), dpi=100, bbox_inches='tight')
     plt.close(fig)
 
     chart_url = url_for('static', filename='summary.png')
