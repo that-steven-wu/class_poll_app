@@ -16,23 +16,24 @@
 <body>
   <h1>Classroom Poll</h1>
 
-  <!-- === 在这里插入指示 === -->
+  <!-- 保留最前面的一行提示 -->
   <p style="color: #333; font-size: 1.1em;">
-    <strong>Please express all numeric answers to one decimal place.</strong><br><br>
-  
-    <!-- 这一行变红 -->
-    <span style="color: red; font-weight: bold;">
-    Please remove all dollar signs ($)
-    </span><br><br>
-  
-    For example, if your answer is $40,000, you should just input <code>40000.0</code>.<br><br>
-    <span style="color: red; font-weight: bold;">
-    Please DO NOT input percentage signs (%)
-    </span><br><br>
-
-    For example, if your answer is 15%, you should just input <code>15.0</code>.
+    <strong>Please express all numeric answers to one decimal place.</strong>
   </p>
-  
+
+  <!-- 有序列表指示 -->
+  <ol style="color: #333; font-size: 1.1em; padding-left: 1.2em;">
+    <li style="margin-bottom: 0.8em;">
+      <span style="color: blue; font-weight: bold;">If you are not sure of an answer, please input <code>0</code>.</span>
+    </li>
+    <li style="margin-bottom: 0.8em;">
+      <span style="color: red; font-weight: bold;">Please remove all dollar signs ($).</span> For example, if your answer is $40,000, you should just input <code>40000.0</code>.
+    </li>
+    <li style="margin-bottom: 0.8em;">
+      <span style="color: red; font-weight: bold;">Please DO NOT input percentage signs (%).</span> For example, if your answer is 15%, you should just input <code>15.0</code>.
+    </li>
+  </ol>
+
   <form action="/submit" method="post">
     {% set questions = [
       ("Q1a", "Question 1a"),

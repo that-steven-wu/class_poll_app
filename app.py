@@ -101,7 +101,12 @@ def results():
         correct = CORRECT_ANSWERS.get(q)
         for j, method in enumerate(METHOD_LABELS):
             ax = axes[i][j]
-            data = df[(df['question']==q)&(df['method']==method)]['answer'].dropna()
+            # 忽略 NaN 和 0 值
+            data = (
+                df[(df['question']==q)&(df['method']==method)]['answer']
+                  .dropna()
+                  .loc[lambda s: s != 0]
+            )
             if not data.empty:
                 ax.hist(data, bins=12, edgecolor='black', alpha=0.7)
                 ax.axvline(data.mean(), color='blue', linestyle='-', linewidth=1.8, alpha=0.6, label='Mean')
@@ -112,25 +117,22 @@ def results():
             if data.notna().any() or correct is not None:
                 ax.legend(fontsize=8)
 
-            # 增大标题并设置字体
             ax.set_title(f"{q} - {method}", fontsize=14)
             if j == 0:
                 ax.set_ylabel('Count', fontsize=12)
             if i == n_questions-1:
                 ax.set_xlabel('Answer', fontsize=12)
 
-            # 格式化 x 轴：千分位 & 水平显示
+            # x 轴格式化 & 刻度
             ax.xaxis.set_major_formatter(mtick.FuncFormatter(lambda x, pos: f"{int(x):,}"))
-            ax.tick_params(axis='x', labelrotation=0, labelsize=10)
-            # 根据标准答案大小决定刻度个数
             if correct is not None and correct > 1_000_000:
                 ax.xaxis.set_major_locator(MaxNLocator(nbins=4, integer=True))
             else:
                 ax.xaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
+            ax.tick_params(axis='x', labelrotation=0, labelsize=10)
 
             ax.grid(True, axis='y', linestyle='--', alpha=0.6)
 
-    # 调整子图间距
     plt.tight_layout(pad=2.0, h_pad=2.0, w_pad=0.8)
     plt.savefig(os.path.join(app.root_path, CHART_PATH), dpi=100, bbox_inches='tight')
     plt.close(fig)
