@@ -1,27 +1,56 @@
-<!-- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <title>Submission Summary</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-  <h1>Submission Summary</h1>
-  <img src="{{ chart_url }}" alt="Summary Chart" />
-  <p><a href="{{ url_for('results') }}">Refresh Chart</a></p>
-</body>
-</html> -->
-
-
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Submission Summary</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <style>
+    .btn-group {
+      text-align: center;
+      margin-bottom: 1.5em;
+    }
+    .btn-group a {
+      display: inline-block;
+      margin: 0 0.5em;
+      padding: 0.6em 1.2em;
+      border-radius: 0.5em;
+      text-decoration: none;
+      font-weight: bold;
+      transition: background-color 0.3s, color 0.3s;
+    }
+    .btn-primary {
+      background-color: #2ecc71;
+      color: #ffffff;
+    }
+    .btn-outline-primary {
+      background-color: transparent;
+      color: #2ecc71;
+      border: 2px solid #2ecc71;
+    }
+    .btn-group a:hover {
+      opacity: 0.85;
+    }
+  </style>
 </head>
 <body>
   <h1 style="text-align: center;">Submission Summary</h1>
+
+  <!-- 美化后的按钮组：Q1/Q2/Q3 -->
+  <div class="btn-group">
+    {% set current = active_group or '1' %}
+    <a href="{{ url_for('results', group=1) }}"
+       class="{% if current == '1' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+      Q1
+    </a>
+    <a href="{{ url_for('results', group=2) }}"
+       class="{% if current == '2' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+      Q2
+    </a>
+    <a href="{{ url_for('results', group=3) }}"
+       class="{% if current == '3' %}btn-primary{% else %}btn-outline-primary{% endif %}">
+      Q3
+    </a>
+  </div>
 
   {% if chart_url %}
     <div style="text-align: center;">
@@ -32,4 +61,3 @@
   {% endif %}
 </body>
 </html>
-

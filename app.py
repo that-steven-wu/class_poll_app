@@ -5,6 +5,8 @@ import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mtick
+from matplotlib.ticker import MaxNLocator
 
 from flask import Flask, render_template, request, url_for
 
@@ -18,12 +20,18 @@ DATA_DIR   = os.path.join(os.path.dirname(__file__), 'data')
 CSV_PATH   = os.path.join(DATA_DIR, 'submissions.csv')
 CHART_PATH = os.path.join('static', 'summary.png')
 
-# 问题键
+# 全部问题键
 QUESTION_KEYS = [
     "Q1a","Q1b","Q1c",
     "Q2a","Q2b1","Q2b2",
     "Q3a1","Q3a2","Q3b1","Q3b2"
 ]
+# 分组映射
+GROUP_MAP = {
+    '1': ["Q1a","Q1b","Q1c"],
+    '2': ["Q2a","Q2b1","Q2b2"],
+    '3': ["Q3a1","Q3a2","Q3b1","Q3b2"]
+}
 # 三种方法标签
 METHOD_LABELS = ["Not using AI", "Using some AI", "Using refined AI"]
 
@@ -46,17 +54,15 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', question_keys=QUESTION_KEYS, method_labels=METHOD_LABELS)
 
 @app.route('/submit', methods=['POST'])
 def submit():
-    # 读取或初始化 DataFrame
     if os.path.exists(CSV_PATH):
         df = pd.read_csv(CSV_PATH)
     else:
         df = pd.DataFrame(columns=['question', 'method', 'answer'])
 
-    # 收集新提交
     new_rows = []
     for q in QUESTION_KEYS:
         for i, method in enumerate(METHOD_LABELS, start=1):
@@ -73,50 +79,64 @@ def submit():
 
 @app.route('/results')
 def results():
-    # 如果没有任何提交，先给出提示
+    # 默认 Q1
+    group = request.args.get('group')
+    if group not in GROUP_MAP:
+        group = '1'
+    keys = GROUP_MAP[group]
+
     if not os.path.exists(CSV_PATH):
         return render_template('results.html', chart_url=None,
-                               message="There are no submissions yet. Please submit once on the homepage before checking the statistics.")
+                               message="There are no submissions yet.",
+                               active_group=group)
 
     df = pd.read_csv(CSV_PATH)
-    n_questions = len(QUESTION_KEYS)
+    n_questions = len(keys)
     n_methods   = len(METHOD_LABELS)
 
-    # 配置画布尺寸
     fig_w, fig_h = n_methods * 5, n_questions * 3
     fig, axes = plt.subplots(n_questions, n_methods, figsize=(fig_w, fig_h), squeeze=False)
 
-    # 遍历绘制每个子图
-    for i, q in enumerate(QUESTION_KEYS):
+    for i, q in enumerate(keys):
         correct = CORRECT_ANSWERS.get(q)
         for j, method in enumerate(METHOD_LABELS):
             ax = axes[i][j]
-            data = df[(df['question'] == q) & (df['method'] == method)]['answer'].dropna()
+            data = df[(df['question']==q)&(df['method']==method)]['answer'].dropna()
             if not data.empty:
                 ax.hist(data, bins=12, edgecolor='black', alpha=0.7)
-                mean_val = data.mean()
-                ax.axvline(mean_val, color='blue', linestyle='-', linewidth=1.8, alpha=0.6, label='Mean')
+                ax.axvline(data.mean(), color='blue', linestyle='-', linewidth=1.8, alpha=0.6, label='Mean')
             else:
                 ax.text(0.5, 0.5, 'No data', ha='center', va='center', fontsize=10)
             if correct is not None:
                 ax.axvline(correct, color='black', linestyle='--', linewidth=1.8, alpha=0.6, label='Correct Answer')
-            if (not data.empty) or (correct is not None):
+            if data.notna().any() or correct is not None:
                 ax.legend(fontsize=8)
-            ax.set_title(f"{q} - {method}", fontsize=10)
-            if j == 0:
-                ax.set_ylabel('Count', fontsize=10)
-            if i == n_questions - 1:
-                ax.set_xlabel('Answer', fontsize=10)
-            ax.grid(True, axis='y', linestyle='--', alpha=0.6)
-            ax.tick_params(axis='both', labelsize=8)
 
-    # 布局和保存
-    plt.tight_layout(pad=1.5, h_pad=1.2, w_pad=0.8)
+            # 增大标题并设置字体
+            ax.set_title(f"{q} - {method}", fontsize=14)
+            if j == 0:
+                ax.set_ylabel('Count', fontsize=12)
+            if i == n_questions-1:
+                ax.set_xlabel('Answer', fontsize=12)
+
+            # 格式化 x 轴：千分位 & 水平显示
+            ax.xaxis.set_major_formatter(mtick.FuncFormatter(lambda x, pos: f"{int(x):,}"))
+            ax.tick_params(axis='x', labelrotation=0, labelsize=10)
+            # 根据标准答案大小决定刻度个数
+            if correct is not None and correct > 1_000_000:
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=4, integer=True))
+            else:
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=6, integer=True))
+
+            ax.grid(True, axis='y', linestyle='--', alpha=0.6)
+
+    # 调整子图间距
+    plt.tight_layout(pad=2.0, h_pad=2.0, w_pad=0.8)
     plt.savefig(os.path.join(app.root_path, CHART_PATH), dpi=100, bbox_inches='tight')
     plt.close(fig)
 
-    chart_url = url_for('static', filename='summary.png')
-    return render_template('results.html', chart_url=chart_url)
+    return render_template('results.html', chart_url=url_for('static', filename='summary.png'),
+                           message=None, active_group=group)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
