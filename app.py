@@ -11,8 +11,6 @@ from matplotlib.ticker import MaxNLocator
 from flask import Flask, render_template, request, url_for
 
 app = Flask(__name__)
-
-# 使用内置 ggplot 风格增强可读性
 plt.style.use('ggplot')
 
 # 数据存放路径
@@ -99,7 +97,7 @@ def submit():
 @app.route('/results')
 def results():
     # ——— 文本视图分支 ———
-    text_q = request.args.get('text')  # "Q4" or "Q5"
+    text_q = request.args.get('text')  # "Q4" 或 "Q5"
     if text_q in ('Q4', 'Q5'):
         if os.path.exists(TEXT_CSV_PATH):
             df_text = pd.read_csv(TEXT_CSV_PATH)
@@ -127,35 +125,63 @@ def results():
 
     df = pd.read_csv(CSV_PATH)
     n_q, n_m = len(keys), len(METHOD_LABELS)
-    fig, axes = plt.subplots(n_q, n_m, figsize=(n_m*5, n_q*3), squeeze=False)
+    fig, axes = plt.subplots(n_q, n_m,
+                             figsize=(n_m*5, n_q*3),
+                             squeeze=False)
+
+    # 恢复初始底部留白，并增大行间距
+    fig.subplots_adjust(bottom=0.4, hspace=-0.1)
 
     for i, q in enumerate(keys):
         corr = CORRECT_ANSWERS[q]
         for j, method in enumerate(METHOD_LABELS):
             ax = axes[i][j]
             data = (
-                df[(df.question==q)&(df.method==method)]['answer']
-                  .dropna().loc[lambda s: s!=0]
+                df[(df.question == q) & (df.method == method)]['answer']
+                  .dropna().loc[lambda s: s != 0]
             )
-            if not data.empty:
-                ax.hist(data, bins=12, edgecolor='black', alpha=0.7)
-                ax.axvline(data.mean(), color='blue', linestyle='-', linewidth=1.8, alpha=0.6)
+
+            if data.empty:
+                mean_val = sd_val = 0
+                ax.text(0.5, 0.5, 'No data',
+                        ha='center', va='center', fontsize=10)
             else:
-                ax.text(0.5,0.5,'No data',ha='center',va='center',fontsize=10)
-            ax.axvline(corr, color='black', linestyle='--', linewidth=1.8, alpha=0.6)
+                mean_val = data.mean()
+                sd_val   = data.std()
+                ax.hist(data, bins=12, edgecolor='black', alpha=0.7)
+                ax.axvline(mean_val, color='blue',
+                           linestyle='-', linewidth=1.8, alpha=0.6,
+                           label='Mean')
+            ax.axvline(corr, color='black',
+                       linestyle='--', linewidth=1.8, alpha=0.6,
+                       label='Correct Answer')
 
+            ax.legend(fontsize=9)
             ax.set_title(f"{q} - {method}", fontsize=14)
-            if j==0: ax.set_ylabel('Count', fontsize=12)
-            if i==n_q-1: ax.set_xlabel('Answer', fontsize=12)
+            if j == 0:
+                ax.set_ylabel('Count', fontsize=12)
+            if i == n_q - 1:
+                ax.set_xlabel('Answer', fontsize=12)
 
-            ax.xaxis.set_major_formatter(mtick.FuncFormatter(lambda x, pos: f"{int(x):,}"))
-            loc = MaxNLocator(nbins=4 if corr>1e6 else 6, integer=True)
-            ax.xaxis.set_major_locator(loc)
+            ax.xaxis.set_major_formatter(
+                mtick.FuncFormatter(lambda x, pos: f"{int(x):,}")
+            )
+            locator = MaxNLocator(nbins=4 if corr > 1e6 else 6, integer=True)
+            ax.xaxis.set_major_locator(locator)
             ax.tick_params(axis='x', labelrotation=0, labelsize=10)
             ax.grid(True, axis='y', linestyle='--', alpha=0.6)
 
-    plt.tight_layout(pad=2.0, h_pad=2.0, w_pad=0.8)
-    plt.savefig(os.path.join(app.root_path, CHART_PATH), dpi=100, bbox_inches='tight')
+            # 保持 info 行位置不变
+            info = f"Mean: {mean_val:.1f}   SD: {sd_val:.1f}   Correct: {corr:.1f}"
+            ax.text(0.5, -0.3, info,
+                    transform=ax.transAxes,
+                    ha='center', va='top',
+                    fontsize=10,
+                    fontweight='bold')
+
+    plt.tight_layout(pad=2.0, w_pad=0.8)
+    plt.savefig(os.path.join(app.root_path, CHART_PATH),
+                dpi=100, bbox_inches='tight')
     plt.close(fig)
 
     return render_template('results.html',
@@ -165,4 +191,6 @@ def results():
                            message=None)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=True)
+    app.run(host='0.0.0.0',
+            port=int(os.environ.get('PORT', 5000)),
+            debug=True)
