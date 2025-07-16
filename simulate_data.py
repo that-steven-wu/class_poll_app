@@ -15,22 +15,50 @@ CORRECT = {
     "Q3b2":       14.6
 }
 
-METHODS = ["Not using AI", "Using some AI", "Using refined AI"]
-CSV_PATH = os.path.join("data", "submissions.csv")
+METHODS     = ["Not using AI", "Using some AI", "Using refined AI"]
+NUM_CSV     = os.path.join("data", "submissions.csv")
+TEXT_CSV    = os.path.join("data", "text_responses.csv")
 
-# 删除旧数据
-if os.path.exists(CSV_PATH):
-    os.remove(CSV_PATH)
+# Sample text answers
+SAMPLE_Q4 = [
+    "I found Question 4 quite challenging.",
+    "Could you clarify the assumptions?",
+    "See my attached notes.",
+    "N/A"
+]
+SAMPLE_Q5 = [
+    "My opinion is that...",
+    "I would recommend further research.",
+    "No comment.",
+    "N/A"
+]
 
-with open(CSV_PATH, "w", newline="", encoding="utf-8") as f:
+# Ensure data directory exists
+os.makedirs("data", exist_ok=True)
+
+# Remove old files if present
+for path in (NUM_CSV, TEXT_CSV):
+    if os.path.exists(path):
+        os.remove(path)
+
+# 1) Generate numeric submissions.csv (unchanged, 400 students)
+with open(NUM_CSV, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
-    writer.writerow(["question", "answer", "method"])
-    for student in range(1, 401):   # 1–400
+    writer.writerow(["question", "method", "answer"])
+    for student in range(1, 401):   # 400 simulated students
         for q, correct in CORRECT.items():
             m   = random.choice(METHODS)
-            # 相对标准答案 5% 的正态扰动
             sd  = correct * 0.05
             ans = round(random.normalvariate(correct, sd), 1)
-            writer.writerow([q, ans, m])
+            writer.writerow([q, m, ans])
+print(f"✅ Generated {400 * len(CORRECT)} numeric rows in {NUM_CSV}")
 
-print(f"✅ 已生成 {400 * len(CORRECT)} 条模拟记录到 {CSV_PATH}")
+# 2) Generate text_responses.csv (only 80 students)
+with open(TEXT_CSV, "w", newline="", encoding="utf-8") as f:
+    writer = csv.writer(f)
+    writer.writerow(["Q4_answer", "Q5_answer"])
+    for student in range(1, 81):   # 80 simulated students
+        q4 = random.choice(SAMPLE_Q4)
+        q5 = random.choice(SAMPLE_Q5)
+        writer.writerow([q4, q5])
+print(f"✅ Generated 80 text rows in {TEXT_CSV}")

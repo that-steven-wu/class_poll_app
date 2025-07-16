@@ -47,7 +47,7 @@
       ("Q3b1", "Question 3b.i"),
       ("Q3b2", "Question 3b.ii")
     ] %}
-    {% set method_labels = ["Not using AI", "Using some AI", "Using refined AI"] %}
+    {% set method_labels = ["Section 1 & 2", "Section 3 & 4", "Section 5 & 6"] %}
     {% for key, label in questions %}
       <fieldset>
         <legend>{{ label }}</legend>
@@ -67,6 +67,38 @@
       </fieldset>
       <hr>
     {% endfor %}
+
+    <!-- 开放式文本问题 -->
+    <fieldset>
+      <legend>Question 4</legend>
+      <textarea
+        name="Q4_answer"
+        id="Q4_answer"
+        rows="5"
+        style="width: 100%;"
+        placeholder="Enter your response here"
+        required
+      ></textarea>
+    </fieldset>
+    <hr>
+    <fieldset>
+      <legend>Question 5</legend>
+      <textarea
+        name="Q5_answer"
+        id="Q5_answer"
+        rows="5"
+        style="width: 100%;"
+        placeholder="Enter your response here"
+        required
+      ></textarea>
+    </fieldset>
+    <hr>
+
+    <!-- 新增提示行 -->
+    <p style="color: #333; font-size: 1em; font-style: italic;">
+      If you are unsure about the answers in Question 4 &amp; 5, please leave it as <code>N/A</code>.
+    </p>
+
     <button type="submit">Submit All Responses</button>
   </form>
 </body>
