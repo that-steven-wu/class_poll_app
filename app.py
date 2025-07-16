@@ -1,5 +1,6 @@
 import os
 import pandas as pd
+import numpy as np
 
 # 强制使用 Agg 后端，避免 Tkinter 错误
 import matplotlib
@@ -97,7 +98,7 @@ def submit():
 @app.route('/results')
 def results():
     # ——— 文本视图分支 ———
-    text_q = request.args.get('text')  # "Q4" 或 "Q5"
+    text_q = request.args.get('text')
     if text_q in ('Q4', 'Q5'):
         if os.path.exists(TEXT_CSV_PATH):
             df_text = pd.read_csv(TEXT_CSV_PATH)
@@ -129,16 +130,25 @@ def results():
                              figsize=(n_m*5, n_q*3),
                              squeeze=False)
 
-    # 恢复初始底部留白，并增大行间距
-    fig.subplots_adjust(bottom=0.4, hspace=-0.1)
+    # 恢复底部留白
+    fig.subplots_adjust(bottom=0.10)
 
     for i, q in enumerate(keys):
         corr = CORRECT_ANSWERS[q]
+        # 计算该行最大频数，统一 y 轴
+        row_max = 0
+        for method in METHOD_LABELS:
+            dat = df[(df.question==q)&(df.method==method)]['answer']\
+                     .dropna().loc[lambda s: s!=0]
+            if not dat.empty:
+                counts, _ = np.histogram(dat, bins=12)
+                row_max = max(row_max, counts.max())
+
         for j, method in enumerate(METHOD_LABELS):
             ax = axes[i][j]
             data = (
-                df[(df.question == q) & (df.method == method)]['answer']
-                  .dropna().loc[lambda s: s != 0]
+                df[(df.question==q)&(df.method==method)]['answer']
+                  .dropna().loc[lambda s: s!=0]
             )
 
             if data.empty:
@@ -148,13 +158,29 @@ def results():
             else:
                 mean_val = data.mean()
                 sd_val   = data.std()
-                ax.hist(data, bins=12, edgecolor='black', alpha=0.7)
-                ax.axvline(mean_val, color='blue',
-                           linestyle='-', linewidth=1.8, alpha=0.6,
+                # 缩小柱宽
+                ax.hist(data,
+                        bins=15,
+                        rwidth=0.9,
+                        edgecolor='black',
+                        alpha=0.7)
+                ax.axvline(mean_val,
+                           color='blue',
+                           linestyle='-',
+                           linewidth=1.8,
+                           alpha=0.6,
                            label='Mean')
-            ax.axvline(corr, color='black',
-                       linestyle='--', linewidth=1.8, alpha=0.6,
+
+            # 绘制正确答案
+            ax.axvline(corr,
+                       color='black',
+                       linestyle='--',
+                       linewidth=1.8,
+                       alpha=0.6,
                        label='Correct Answer')
+
+            # 统一 y 轴
+            ax.set_ylim(0, row_max * 1.1)
 
             ax.legend(fontsize=9)
             ax.set_title(f"{q} - {method}", fontsize=14)
@@ -171,11 +197,14 @@ def results():
             ax.tick_params(axis='x', labelrotation=0, labelsize=10)
             ax.grid(True, axis='y', linestyle='--', alpha=0.6)
 
-            # 保持 info 行位置不变
+            # info 行
             info = f"Mean: {mean_val:.1f}   SD: {sd_val:.1f}   Correct: {corr:.1f}"
-            ax.text(0.5, -0.3, info,
+            ax.text(0.5,
+                    -0.32,
+                    info,
                     transform=ax.transAxes,
-                    ha='center', va='top',
+                    ha='center',
+                    va='top',
                     fontsize=10,
                     fontweight='bold')
 
