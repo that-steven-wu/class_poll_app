@@ -2,3 +2,5 @@ Flask
 pandas
 matplotlib
 gunicorn
+filelock
+python-dotenv
