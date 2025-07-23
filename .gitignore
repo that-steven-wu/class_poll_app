@@ -1,14 +1,25 @@
-# 本地数据
+# 本地数据文件
 data/*.csv
+
+# 运行时生成的图
+static/summary.png
+
+# 虚拟环境
+mac_venv/
+venv/
+.venv/
+*/venv/
+*/.venv/
 
 # 本地环境变量
 .env
 
-# Python 缓存
+# Python缓存
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# VSCode 配置（可选）
+# 系统/编辑器杂项
+.DS_Store
 .vscode/
