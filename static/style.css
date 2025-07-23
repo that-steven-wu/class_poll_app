@@ -1,33 +1,81 @@
 body {
-    font-family: Arial, sans-serif;
-    margin: 40px;
-  }
-  
-  h1 {
-    color: #2c3e50;
-  }
-  
-  input {
-    padding: 10px;
-    width: 300px;
-    margin-right: 10px;
-  }
-  
-  button {
-    padding: 10px 20px;
-    background-color: #2980b9;
-    color: white;
-    border: none;
-    cursor: pointer;
-  }
+  font-family: Arial, sans-serif;
+  margin: 40px;
+  color: #2c3e50;
+}
+
+h1 {
+  color: #2c3e50;
+}
+
+input {
+  padding: 10px;
+  width: 300px;
+  margin-right: 10px;
+}
+
+button {
+  padding: 10px 20px;
+  background-color: #2980b9;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
 
 .response-group {
-    margin-bottom: 8px;
+  margin-bottom: 8px;
 }
-  
+
 .response-group select,
-  .response-group input {
-    padding: 6px;
-    margin-right: 6px;
+.response-group input {
+  padding: 6px;
+  margin-right: 6px;
 }
-  
+
+/* -------- 结果页补充样式 -------- */
+
+.center {
+  text-align: center;
+}
+
+/* 表格样式 */
+.info-table {
+  margin: 0 auto;
+  border-collapse: collapse;
+  min-width: 480px;
+  font-size: 14px;
+}
+.info-table th,
+.info-table td {
+  padding: 0.5em 0.7em;
+  border: 1px solid #ccc;
+}
+
+/* 文本回答列表 */
+.text-list {
+  max-width: 600px;
+  margin: 1em auto;
+  list-style: disc inside;
+  line-height: 1.4;
+}
+
+/* 图表容器与图片 */
+.chart-wrap {
+  width: 100%;
+  max-width: 1800px;
+  margin: 20px auto 40px;
+  text-align: center;
+}
+.chart-img {
+  width: 100%;
+  height: auto;
+  display: inline-block;
+  float: none;
+}
+
+/* 保底：覆盖任何全局 img 样式 */
+img {
+  max-width: 100%;
+  height: auto;
+  float: none !important;
+}
