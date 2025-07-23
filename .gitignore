@@ -1,0 +1,14 @@
+# 本地数据
+data/*.csv
+
+# 本地环境变量
+.env
+
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# VSCode 配置（可选）
+.vscode/

@@ -7,17 +7,31 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
+
 from flask import Flask, render_template, request, url_for
+from filelock import FileLock
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo  # Python 3.9+
+from dotenv import load_dotenv
+load_dotenv()
 
 app = Flask(__name__)
 plt.style.use('ggplot')
 
-# 数据存放路径
-DATA_DIR           = os.path.join(os.path.dirname(__file__), 'data')
-NUMERIC_CSV_PATH   = os.path.join(DATA_DIR, 'submissions.csv')
-TEXT_CSV_PATH      = os.path.join(DATA_DIR, 'text_responses.csv')
-INFO_CSV_PATH      = os.path.join(DATA_DIR, 'submission_info.csv')
-CHART_PATH         = os.path.join('static', 'summary.png')
+# ========================= 配置区 =========================
+# 磁盘路径（Render 上挂载的 Persistent Disk），本地可用环境变量切换
+DATA_DIR         = os.environ.get("DATA_DIR", "/var/data")
+NUMERIC_CSV_PATH = os.path.join(DATA_DIR, 'submissions.csv')
+TEXT_CSV_PATH    = os.path.join(DATA_DIR, 'text_responses.csv')
+INFO_CSV_PATH    = os.path.join(DATA_DIR, 'submission_info.csv')
+LOCK_PATH        = os.path.join(DATA_DIR, 'io.lock')
+
+# 课堂当天只展示该日数据；切换展示模式用 SHOW_MODE
+CLASS_DAY = os.environ.get("CLASS_DAY", "2025-08-04")
+CLASS_TZ  = os.environ.get("CLASS_TZ", "America/New_York")
+SHOW_MODE = os.environ.get("SHOW_MODE", "class_only")  # 'class_only' or 'all'
+
+CHART_PATH = os.path.join('static', 'summary.png')
 
 QUESTION_KEYS = [
     "Q1a","Q1b","Q1c",
@@ -37,6 +51,22 @@ CORRECT_ANSWERS = {
 }
 
 os.makedirs(DATA_DIR, exist_ok=True)
+# ==========================================================
+
+
+def filter_for_day(df, day_str=CLASS_DAY, tz_str=CLASS_TZ):
+    """只保留课堂当天的数据（按本地时区 day_str 的 00:00~23:59:59）"""
+    if 'ts' not in df.columns:
+        return df[0:0]
+    df['ts'] = pd.to_datetime(df['ts'], utc=True, errors='coerce')
+
+    start_local = datetime.fromisoformat(day_str).replace(tzinfo=ZoneInfo(tz_str))
+    end_local   = start_local.replace(hour=23, minute=59, second=59)
+    start_utc   = start_local.astimezone(ZoneInfo("UTC"))
+    end_utc     = end_local.astimezone(ZoneInfo("UTC"))
+
+    return df[(df['ts'] >= start_utc) & (df['ts'] <= end_utc)]
+
 
 @app.route('/')
 def index():
@@ -44,63 +74,73 @@ def index():
                            question_keys=QUESTION_KEYS,
                            method_labels=METHOD_LABELS)
 
+
 @app.route('/submit', methods=['POST'])
 def submit():
-    # —— 处理数值题目 ——
-    if os.path.exists(NUMERIC_CSV_PATH):
-        df_num = pd.read_csv(NUMERIC_CSV_PATH)
-    else:
-        df_num = pd.DataFrame(columns=['question','method','answer'])
-    rows = []
-    for q in QUESTION_KEYS:
-        for i, m in enumerate(METHOD_LABELS, 1):
-            v = request.form.get(f"{q}_answer_{i}")
-            try:
-                fv = float(v)
-            except:
-                fv = None
-            rows.append({'question': q, 'method': m, 'answer': fv})
-    df_num = pd.concat([df_num, pd.DataFrame(rows)], ignore_index=True)
-    df_num.to_csv(NUMERIC_CSV_PATH, index=False)
+    now_utc = datetime.now(timezone.utc).isoformat()
 
-    # —— 处理文本题 Q4, Q5 ——
-    q4 = request.form.get('Q4_answer','').strip() or 'N/A'
-    q5 = request.form.get('Q5_answer','').strip() or 'N/A'
-    if os.path.exists(TEXT_CSV_PATH):
-        df_text = pd.read_csv(TEXT_CSV_PATH)
-    else:
-        df_text = pd.DataFrame(columns=['Q4_answer','Q5_answer'])
-    df_text = pd.concat([df_text, pd.DataFrame([{'Q4_answer': q4, 'Q5_answer': q5}])],
-                        ignore_index=True)
-    df_text.to_csv(TEXT_CSV_PATH, index=False)
+    with FileLock(LOCK_PATH, timeout=10):
+        # —— 数值题 —— #
+        if os.path.exists(NUMERIC_CSV_PATH):
+            df_num = pd.read_csv(NUMERIC_CSV_PATH)
+        else:
+            df_num = pd.DataFrame(columns=['question', 'method', 'answer', 'ts'])
 
-    # —— 存储提交详情 ——
-    sec  = request.form.get('section','').strip()
-    team = request.form.get('team_number','').strip()
-    fn   = request.form.get('first_name','').strip()
-    ln   = request.form.get('last_name','').strip()
-    if os.path.exists(INFO_CSV_PATH):
-        df_info = pd.read_csv(INFO_CSV_PATH)
-    else:
-        df_info = pd.DataFrame(columns=['section','team_number','first_name','last_name'])
-    df_info = pd.concat([df_info, pd.DataFrame([{
-        'section': sec,
-        'team_number': team,
-        'first_name': fn,
-        'last_name': ln
-    }])], ignore_index=True)
-    df_info.to_csv(INFO_CSV_PATH, index=False)
+        rows = []
+        for q in QUESTION_KEYS:
+            for i, m in enumerate(METHOD_LABELS, 1):
+                v = request.form.get(f"{q}_answer_{i}")
+                try:
+                    fv = float(v)
+                except:
+                    fv = None
+                rows.append({'question': q, 'method': m, 'answer': fv, 'ts': now_utc})
+        df_num = pd.concat([df_num, pd.DataFrame(rows)], ignore_index=True)
+        df_num.to_csv(NUMERIC_CSV_PATH, index=False)
+
+        # —— 文本题 Q4/Q5 —— #
+        q4 = request.form.get('Q4_answer', '').strip() or 'N/A'
+        q5 = request.form.get('Q5_answer', '').strip() or 'N/A'
+        if os.path.exists(TEXT_CSV_PATH):
+            df_text = pd.read_csv(TEXT_CSV_PATH)
+        else:
+            df_text = pd.DataFrame(columns=['Q4_answer', 'Q5_answer', 'ts'])
+        df_text = pd.concat([df_text, pd.DataFrame([{
+            'Q4_answer': q4, 'Q5_answer': q5, 'ts': now_utc
+        }])], ignore_index=True)
+        df_text.to_csv(TEXT_CSV_PATH, index=False)
+
+        # —— 提交者信息 —— #
+        sec  = request.form.get('section', '').strip()
+        team = request.form.get('team_number', '').strip()
+        fn   = request.form.get('first_name', '').strip()
+        ln   = request.form.get('last_name', '').strip()
+
+        if os.path.exists(INFO_CSV_PATH):
+            df_info = pd.read_csv(INFO_CSV_PATH)
+        else:
+            df_info = pd.DataFrame(columns=['section', 'team_number',
+                                            'first_name', 'last_name', 'ts'])
+        df_info = pd.concat([df_info, pd.DataFrame([{
+            'section': sec, 'team_number': team,
+            'first_name': fn, 'last_name': ln, 'ts': now_utc
+        }])], ignore_index=True)
+        df_info.to_csv(INFO_CSV_PATH, index=False)
 
     return render_template('thanks.html')
 
+
 @app.route('/results')
 def results():
-    # —— Submission Details 分支 ——
+    # —— Submission Details 分支 —— #
     if request.args.get('info') == 'details':
         if os.path.exists(INFO_CSV_PATH):
-            df_info = pd.read_csv(INFO_CSV_PATH)
+            with FileLock(LOCK_PATH, timeout=10):
+                df_info = pd.read_csv(INFO_CSV_PATH)
+            if SHOW_MODE == "class_only":
+                df_info = filter_for_day(df_info)
             df_info = df_info.sort_values(
-                by=['section','team_number','first_name','last_name'])
+                by=['section', 'team_number', 'first_name', 'last_name'])
             info_rows = df_info.to_dict(orient='records')
         else:
             info_rows = []
@@ -112,11 +152,14 @@ def results():
                                active_group=None,
                                message=None)
 
-    # —— 文本视图 Q4/Q5 ——
+    # —— 文本视图 Q4/Q5 —— #
     text_q = request.args.get('text')
-    if text_q in ('Q4','Q5'):
+    if text_q in ('Q4', 'Q5'):
         if os.path.exists(TEXT_CSV_PATH):
-            df_text = pd.read_csv(TEXT_CSV_PATH)
+            with FileLock(LOCK_PATH, timeout=10):
+                df_text = pd.read_csv(TEXT_CSV_PATH)
+            if SHOW_MODE == "class_only":
+                df_text = filter_for_day(df_text)
             answers = df_text[f"{text_q}_answer"].fillna("N/A").tolist()
         else:
             answers = []
@@ -127,11 +170,12 @@ def results():
                                show_info=False,
                                message="No text responses yet.")
 
-    # —— 数值视图 Q1–Q3 ——
-    group = request.args.get('group','1')
+    # —— 数值题视图 Q1–Q3 —— #
+    group = request.args.get('group', '1')
     if group not in GROUP_MAP:
         group = '1'
     keys = GROUP_MAP[group]
+
     if not os.path.exists(NUMERIC_CSV_PATH):
         return render_template('results.html',
                                show_text=False,
@@ -140,15 +184,27 @@ def results():
                                message="There are no submissions yet.",
                                active_group=group)
 
-    df = pd.read_csv(NUMERIC_CSV_PATH)
+    with FileLock(LOCK_PATH, timeout=10):
+        df = pd.read_csv(NUMERIC_CSV_PATH)
+
+    if SHOW_MODE == "class_only":
+        df = filter_for_day(df)
+
+    if df.empty:
+        return render_template('results.html',
+                               show_text=False,
+                               show_info=False,
+                               chart_url=None,
+                               message="No data for selected day.",
+                               active_group=group)
+
     n_q, n_m = len(keys), len(METHOD_LABELS)
 
-    # 增大整体画布尺寸，避免子图因间距缩小
-    fig_w = n_m * 6   # 每列 6 单位宽
-    fig_h = n_q * 4   # 每行 4 单位高
+    # 画布尺寸
+    fig_w = n_m * 6
+    fig_h = n_q * 4
     fig, axes = plt.subplots(n_q, n_m, figsize=(fig_w, fig_h), squeeze=False)
 
-    # 增加左右上下间距与子图间距
     fig.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.10,
                         hspace=0.6, wspace=0.6)
 
@@ -157,19 +213,19 @@ def results():
         lower, upper = corr * 0.98, corr * 1.02
         bins = np.linspace(lower, upper, 21)
 
-        # 统一 y 轴：计算行最大频数
+        # 行 y 轴统一
         row_max = 0
         for m in METHOD_LABELS:
-            arr = df[(df.question==q)&(df.method==m)]['answer']\
-                     .dropna().loc[lambda s:(s>=lower)&(s<=upper)]
+            arr = df[(df.question == q) & (df.method == m)]['answer'] \
+                    .dropna().loc[lambda s: (s >= lower) & (s <= upper)]
             if not arr.empty:
                 cnts, _ = np.histogram(arr, bins=bins)
                 row_max = max(row_max, cnts.max())
 
         for j, m in enumerate(METHOD_LABELS):
             ax = axes[i][j]
-            data = df[(df.question==q)&(df.method==m)]['answer']\
-                     .dropna().loc[lambda s:(s>=lower)&(s<=upper)]
+            data = df[(df.question == q) & (df.method == m)]['answer'] \
+                    .dropna().loc[lambda s: (s >= lower) & (s <= upper)]
 
             if not data.empty:
                 mean_val = data.mean()
@@ -199,15 +255,16 @@ def results():
             ax.tick_params(axis='x', labelrotation=0, labelsize=10)
             ax.grid(True, axis='y', linestyle='--', alpha=0.6)
 
-            # 底部信息行，移动更远些以增大与 x 轴标题间距
             info = f"Mean: {mean_val:.0f}   SD: {sd_val:.1f}   Correct: {corr:.0f}"
             ax.text(0.5, -0.22, info,
                     transform=ax.transAxes, ha='center', va='top',
                     fontsize=10, fontweight='bold')
 
     plt.tight_layout(pad=3.0, h_pad=2.0, w_pad=2.0)
-    plt.savefig(os.path.join(app.root_path, CHART_PATH),
-                dpi=100, bbox_inches='tight')
+
+    with FileLock(LOCK_PATH, timeout=10):
+        plt.savefig(os.path.join(app.root_path, CHART_PATH),
+                    dpi=100, bbox_inches='tight')
     plt.close(fig)
 
     return render_template('results.html',
@@ -216,6 +273,7 @@ def results():
                            active_group=group,
                            chart_url=url_for('static', filename='summary.png'),
                            message=None)
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0',
