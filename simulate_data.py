@@ -15,9 +15,10 @@ CORRECT = {
     "Q3b2":       14.6
 }
 
-METHODS     = ["Not using AI", "Using some AI", "Using refined AI"]
-NUM_CSV     = os.path.join("data", "submissions.csv")
-TEXT_CSV    = os.path.join("data", "text_responses.csv")
+METHODS            = ["Not using AI", "Using some AI", "Using refined AI"]
+NUM_CSV            = os.path.join("data", "submissions.csv")
+TEXT_CSV           = os.path.join("data", "text_responses.csv")
+INFO_CSV           = os.path.join("data", "submission_info.csv")
 
 # Sample text answers
 SAMPLE_Q4 = [
@@ -33,19 +34,23 @@ SAMPLE_Q5 = [
     "N/A"
 ]
 
+# Sample names
+FIRST_NAMES = ["Alice", "Bob", "Carol", "Dave", "Eve", "Frank", "Grace", "Heidi"]
+LAST_NAMES  = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Miller", "Davis", "Wilson"]
+
 # Ensure data directory exists
 os.makedirs("data", exist_ok=True)
 
 # Remove old files if present
-for path in (NUM_CSV, TEXT_CSV):
+for path in (NUM_CSV, TEXT_CSV, INFO_CSV):
     if os.path.exists(path):
         os.remove(path)
 
-# 1) Generate numeric submissions.csv (unchanged, 400 students)
+# 1) Generate numeric submissions.csv (400 students)
 with open(NUM_CSV, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(["question", "method", "answer"])
-    for student in range(1, 401):   # 400 simulated students
+    for student in range(1, 401):   # 1–400
         for q, correct in CORRECT.items():
             m   = random.choice(METHODS)
             sd  = correct * 0.05
@@ -53,12 +58,24 @@ with open(NUM_CSV, "w", newline="", encoding="utf-8") as f:
             writer.writerow([q, m, ans])
 print(f"✅ Generated {400 * len(CORRECT)} numeric rows in {NUM_CSV}")
 
-# 2) Generate text_responses.csv (only 80 students)
+# 2) Generate text_responses.csv (80 students)
 with open(TEXT_CSV, "w", newline="", encoding="utf-8") as f:
     writer = csv.writer(f)
     writer.writerow(["Q4_answer", "Q5_answer"])
-    for student in range(1, 81):   # 80 simulated students
+    for student in range(1, 81):   # 1–80
         q4 = random.choice(SAMPLE_Q4)
         q5 = random.choice(SAMPLE_Q5)
         writer.writerow([q4, q5])
 print(f"✅ Generated 80 text rows in {TEXT_CSV}")
+
+# 3) Generate submission_info.csv (80 students)
+with open(INFO_CSV, "w", newline="", encoding="utf-8") as f:
+    writer = csv.writer(f)
+    writer.writerow(["section", "team_number", "first_name", "last_name"])
+    for student in range(1, 81):   # 1–80
+        section     = random.choice(["1", "2", "3", "4", "5", "6"])
+        team_number = random.randint(1, 15)
+        first_name  = random.choice(FIRST_NAMES)
+        last_name   = random.choice(LAST_NAMES)
+        writer.writerow([section, team_number, first_name, last_name])
+print(f"✅ Generated 80 submission info rows in {INFO_CSV}")
