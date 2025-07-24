@@ -196,6 +196,8 @@ def results():
                              squeeze=False,
                              constrained_layout=True)   # <- 关键
 
+    fig.set_constrained_layout_pads(hspace=0.1)
+
     for i, q in enumerate(keys):
         corr = CORRECT_ANSWERS[q]
         lower, upper = corr * 0.98, corr * 1.02
@@ -244,7 +246,7 @@ def results():
             ax.grid(True, axis='y', linestyle='--', alpha=0.6)
 
             info = f"Mean: {mean_val:.0f}   SD: {sd_val:.1f}   Correct: {corr:.0f}"
-            ax.text(0.5, -0.12, info,  # <- 抬高一点
+            ax.text(0.5, -0.2, info,  # <- 抬高一点
                     transform=ax.transAxes, ha='center', va='top',
                     fontsize=10, fontweight='bold')
 
