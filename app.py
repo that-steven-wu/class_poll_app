@@ -1,4 +1,9 @@
+#!/usr/bin/env python3
 import os
+import tarfile
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
 import pandas as pd
 import numpy as np
 
@@ -8,10 +13,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 
-from flask import Flask, render_template, request, url_for
+from flask import Flask, render_template, request, url_for, send_from_directory, abort
 from filelock import FileLock
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo  # Python 3.9+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -54,7 +57,8 @@ os.makedirs(DATA_DIR, exist_ok=True)
 def filter_for_day(df, day_str=CLASS_DAY, tz_str=CLASS_TZ):
     """只保留课堂当天（本地时区 day_str 的 00:00~23:59:59）"""
     if 'ts' not in df.columns:
-        return df[0:0]
+        return df.iloc[0:0]
+    df = df.copy()
     df['ts'] = pd.to_datetime(df['ts'], utc=True, errors='coerce')
     start_local = datetime.fromisoformat(day_str).replace(tzinfo=ZoneInfo(tz_str))
     end_local   = start_local.replace(hour=23, minute=59, second=59)
@@ -71,14 +75,9 @@ def index():
 @app.route('/submit', methods=['POST'])
 def submit():
     now_utc = datetime.now(timezone.utc).isoformat()
-
     with FileLock(LOCK_PATH, timeout=10):
-        # 数值题
-        if os.path.exists(NUMERIC_CSV_PATH):
-            df_num = pd.read_csv(NUMERIC_CSV_PATH)
-        else:
-            df_num = pd.DataFrame(columns=['question', 'method', 'answer', 'ts'])
-
+        # 数值题保存
+        df_num = pd.read_csv(NUMERIC_CSV_PATH) if os.path.exists(NUMERIC_CSV_PATH) else pd.DataFrame(columns=['question','method','answer','ts'])
         rows = []
         for q in QUESTION_KEYS:
             for i, m in enumerate(METHOD_LABELS, 1):
@@ -87,36 +86,21 @@ def submit():
                     fv = float(v)
                 except:
                     fv = None
-                rows.append({'question': q, 'method': m, 'answer': fv, 'ts': now_utc})
+                rows.append({'question':q,'method':m,'answer':fv,'ts':now_utc})
         df_num = pd.concat([df_num, pd.DataFrame(rows)], ignore_index=True)
         df_num.to_csv(NUMERIC_CSV_PATH, index=False)
 
-        # 文本题
-        q4 = request.form.get('Q4_answer', '').strip() or 'N/A'
-        q5 = request.form.get('Q5_answer', '').strip() or 'N/A'
-        if os.path.exists(TEXT_CSV_PATH):
-            df_text = pd.read_csv(TEXT_CSV_PATH)
-        else:
-            df_text = pd.DataFrame(columns=['Q4_answer', 'Q5_answer', 'ts'])
-        df_text = pd.concat([df_text, pd.DataFrame([{
-            'Q4_answer': q4, 'Q5_answer': q5, 'ts': now_utc
-        }])], ignore_index=True)
+        # 文本题保存
+        q4 = request.form.get('Q4_answer','').strip() or 'N/A'
+        q5 = request.form.get('Q5_answer','').strip() or 'N/A'
+        df_text = pd.read_csv(TEXT_CSV_PATH) if os.path.exists(TEXT_CSV_PATH) else pd.DataFrame(columns=['Q4_answer','Q5_answer','ts'])
+        df_text = pd.concat([df_text, pd.DataFrame([{'Q4_answer':q4,'Q5_answer':q5,'ts':now_utc}])], ignore_index=True)
         df_text.to_csv(TEXT_CSV_PATH, index=False)
 
-        # 基本信息
-        sec  = request.form.get('section', '').strip()
-        team = request.form.get('team_number', '').strip()
-        fn   = request.form.get('first_name', '').strip()
-        ln   = request.form.get('last_name', '').strip()
-
-        if os.path.exists(INFO_CSV_PATH):
-            df_info = pd.read_csv(INFO_CSV_PATH)
-        else:
-            df_info = pd.DataFrame(columns=['section','team_number','first_name','last_name','ts'])
-        df_info = pd.concat([df_info, pd.DataFrame([{
-            'section': sec, 'team_number': team,
-            'first_name': fn, 'last_name': ln, 'ts': now_utc
-        }])], ignore_index=True)
+        # 基本信息保存
+        info = {k: request.form.get(k,'').strip() for k in ['section','team_number','first_name','last_name']}
+        df_info = pd.read_csv(INFO_CSV_PATH) if os.path.exists(INFO_CSV_PATH) else pd.DataFrame(columns=['section','team_number','first_name','last_name','ts'])
+        df_info = pd.concat([df_info, pd.DataFrame([{**info,'ts':now_utc}])], ignore_index=True)
         df_info.to_csv(INFO_CSV_PATH, index=False)
 
     return render_template('thanks.html')
@@ -194,16 +178,15 @@ def results():
     fig, axes = plt.subplots(n_q, n_m,
                              figsize=(fig_w, fig_h),
                              squeeze=False,
-                             constrained_layout=True)   # <- 关键
-
+                             constrained_layout=True)
     fig.set_constrained_layout_pads(hspace=0.1)
 
     for i, q in enumerate(keys):
         corr = CORRECT_ANSWERS[q]
-        lower, upper = corr * 0.98, corr * 1.02
+        lower, upper = corr * 0.97, corr * 1.03
         bins = np.linspace(lower, upper, 21)
 
-        # 统一 y 轴
+        # 统一 y 轴高度
         row_max = 0
         for m in METHOD_LABELS:
             arr = df[(df.question == q) & (df.method == m)]['answer'] \
@@ -212,21 +195,29 @@ def results():
                 cnts, _ = np.histogram(arr, bins=bins)
                 row_max = max(row_max, cnts.max())
         if row_max == 0:
-            row_max = 1  # 防止 ymax==0 的 warning
+            row_max = 1
 
         for j, m in enumerate(METHOD_LABELS):
             ax = axes[i][j]
+            # 原 data 保持：只画正确答案附近的直方图
             data = df[(df.question == q) & (df.method == m)]['answer'] \
                     .dropna().loc[lambda s: (s >= lower) & (s <= upper)]
 
+            # 新：先剔除 0 再计算均值和标准差
+            all_vals = df[(df.question == q) & (df.method == m)]['answer'].dropna()
+            nonzero  = all_vals[all_vals != 0]
+
+            if not nonzero.empty:
+                mean_val = nonzero.mean()
+                sd_val   = nonzero.std()
+            else:
+                mean_val = sd_val = 0
+
             if not data.empty:
-                mean_val = data.mean()
-                sd_val   = data.std()
                 ax.hist(data, bins=bins, edgecolor='black', alpha=0.7)
                 ax.axvline(mean_val, color='blue', linestyle='-',
                            linewidth=1.8, alpha=0.6, label='Mean')
             else:
-                mean_val = sd_val = 0
                 ax.text(0.5, 0.5, 'No data', ha='center', va='center', fontsize=10)
 
             ax.axvline(corr, color='black', linestyle='--',
@@ -245,12 +236,12 @@ def results():
             ax.tick_params(axis='x', labelrotation=0, labelsize=10)
             ax.grid(True, axis='y', linestyle='--', alpha=0.6)
 
-            info = f"Mean: {mean_val:.0f}   SD: {sd_val:.1f}   Correct: {corr:.0f}"
-            ax.text(0.5, -0.2, info,  # <- 抬高一点
+            info = f"Mean: {mean_val:.1f}   SD: {sd_val:.1f}   Correct: {corr:.1f}"
+            ax.text(0.5, -0.2, info,
                     transform=ax.transAxes, ha='center', va='top',
                     fontsize=10, fontweight='bold')
 
-    # 保存（无 bbox_inches，不再 tight_layout）
+    # 保存图表
     with FileLock(LOCK_PATH, timeout=10):
         fig.savefig(os.path.join(app.root_path, CHART_PATH), dpi=180)
     plt.close(fig)
@@ -262,7 +253,23 @@ def results():
                            chart_url=url_for('static', filename='summary.png'),
                            message=None)
 
+@app.route('/download')
+def download_data():
+    """
+    动态打包 DATA_DIR 下所有内容，生成带时间戳的 tgz 并提供下载
+    """
+    ts = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    fname = f"data_{ts}.tgz"
+    out_path = os.path.join('static', fname)
+    # 加锁保证数据一致
+    with FileLock(LOCK_PATH, timeout=10):
+        with tarfile.open(out_path, 'w:gz') as tar:
+            tar.add(DATA_DIR, arcname=os.path.basename(DATA_DIR))
+    if os.path.exists(out_path):
+        return send_from_directory('static', fname, as_attachment=True)
+    else:
+        abort(404)
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0',
-            port=int(os.environ.get('PORT', 5000)),
-            debug=True)
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT',5000)), debug=True)
+
