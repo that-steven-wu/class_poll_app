@@ -30,6 +30,16 @@
       margin-top: 0.2em;
       box-sizing: border-box;
     }
+    .response-group {
+      margin-bottom: 1em;
+    }
+    /* 新增：红色提醒文字 */
+    .response-group small {
+      display: block;
+      color: red;
+      font-size: 0.9em;
+      margin-top: 0.2em;
+    }
   </style>
 </head>
 <body>
@@ -52,7 +62,7 @@
       <span style="color: red; font-weight: bold;">Please DO NOT input percentage signs (%).</span> For example, if your answer is 15%, you should just input <code>15.0</code>.
     </li>
     <li style="margin-bottom: 0.8em;">
-      <span style="color: red; font-weight: bold;">Please input your answers only for your section</span>. For example, if you are in Section 1 or 2, enter your values under “Section 1 & 2” <span style="color: red; font-weight: bold;">and input <code>0</code></span> under “Section 3 & 4” and “Section 5 & 6” for each question.
+      <span style="color: red; font-weight: bold;">Please input your answers only for your section</span>. For example, if you are in Section 1 or 2, enter your values under “Section 1 & 2” <span style="color: red; font-weight: bold;">and input <code>0</code></span> under “Section 3 & 4” and “Section 5 & 6” for each question.
     </li>
   </ol>
 
@@ -84,6 +94,9 @@
               required
               placeholder="Enter your answer"
             >
+            {% if key in ['Q2b2', 'Q3b2'] %}
+              <small>Please input whole numbers, for example, if your answer is 15%, please just enter 15.0.</small>
+            {% endif %}
           </div>
         {% endfor %}
       </fieldset>
