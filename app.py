@@ -33,14 +33,14 @@ SHOW_MODE = os.environ.get("SHOW_MODE", "class_only")  # 'class_only' or 'all'
 # 模板模式（决定前端表单与作图标签）
 TEMPLATE_MODE = os.environ.get("TEMPLATE_MODE", "3section")   # '3section' or '2section'
 
-# 去极端值阈值（保留，便于未来扩展第四张分布图时复用）
+# 去极端值阈值（保留以备后续扩展）
 OUTLIER_TRIM_LO_PCT = float(os.environ.get("OUTLIER_TRIM_LO_PCT", "10"))
 OUTLIER_TRIM_HI_PCT = float(os.environ.get("OUTLIER_TRIM_HI_PCT", "90"))
 TRIM_MIN_TAIL_PCT   = float(os.environ.get("TRIM_MIN_TAIL_PCT", str(OUTLIER_TRIM_LO_PCT)))
 
-# === 新增：离群阈值（相对正确答案的百分比），以及统一柱宽 ===
-OUTLIER_TOL_PCT = float(os.environ.get("OUTLIER_TOL_PCT", "3.0")) / 100.0  # 3% 默认
-BAR_WIDTH       = float(os.environ.get("BAR_WIDTH", "0.6"))                 # 柱宽 60%
+# 方案C：离群阈值（相对正确答案的百分比）与统一柱宽
+OUTLIER_TOL_PCT = float(os.environ.get("OUTLIER_TOL_PCT", "3.0")) / 100.0  # 3%
+BAR_WIDTH       = float(os.environ.get("BAR_WIDTH", "0.3"))                 # 60%
 
 CHART_PATH = os.path.join('static', 'summary.png')
 
@@ -61,7 +61,7 @@ if TEMPLATE_MODE == '2section':
 else:  # '3section'
     METHOD_LABELS = ["Section 1 & 2", "Section 3 & 4", "Section 5 & 6"]
 
-# ===== 历史标签兼容：三列的同义集合（用于数据聚合） =====
+# ===== 历史标签兼容（用于数据聚合） =====
 METHOD_SYNONYMS = {
     0: {"Section 1 & 2", "Odd & Even", "Not using AI"},
     1: {"Section 3 & 4", "Odd Team", "Using some AI"},
@@ -91,7 +91,7 @@ def filter_for_day(df, day_str=CLASS_DAY, tz_str=CLASS_TZ):
 
 @app.route('/')
 def index():
-    # 前端根据 disable_first 控制“第一列是否禁用”（2section 模式）
+    # 前端根据 disable_first 控制 2section
     return render_template(
         'index.html',
         question_keys=QUESTION_KEYS,
@@ -105,11 +105,20 @@ def submit():
     with FileLock(LOCK_PATH, timeout=10):
         # 数值题保存
         df_num = pd.read_csv(NUMERIC_CSV_PATH) if os.path.exists(NUMERIC_CSV_PATH) else pd.DataFrame(columns=['question','method','answer','ts'])
+
+        # 2section：只接收 Odd Team / Even Team（表单索引 2、3）；3section：三列全接收
+        if TEMPLATE_MODE == '2section':
+            method_positions = [2, 3]
+        else:
+            method_positions = [1, 2, 3]
+
         rows = []
         for q in QUESTION_KEYS:
-            for i, m in enumerate(METHOD_LABELS, 1):
+            for pos in method_positions:  # 1-based for form keys
+                m = METHOD_LABELS[pos - 1]
+                key = f"{q}_answer_{pos}"
                 try:
-                    fv_raw = request.form.get(f"{q}_answer_{i}")
+                    fv_raw = request.form.get(key)
                     fv = float(fv_raw) if fv_raw not in (None, '') else None
                 except Exception:
                     fv = None
@@ -210,23 +219,26 @@ def results():
     fig, axes = plt.subplots(n_q, n_panels, figsize=(fig_w, fig_h), squeeze=False, constrained_layout=True)
     fig.set_constrained_layout_pads(hspace=0.12)
 
-    # x 轴位置
-    x_idx = np.arange(3)
+    # 决定要绘制的列与标签
+    if TEMPLATE_MODE == '2section':
+        method_idx_for_plot = [1, 2]  # 只画 Odd Team / Even Team
+    else:
+        method_idx_for_plot = [0, 1, 2]
+    plot_labels = [METHOD_LABELS[k] for k in method_idx_for_plot]
+    x_idx = np.arange(len(method_idx_for_plot))
 
     for i, q in enumerate(keys):
         corr = CORRECT_ANSWERS.get(q, np.nan)
 
-        # ---------- 取各方式原始序列 ----------
-        series_by_method_all = [ _get_series_by_method(df, q, k) for k in range(3) ]
-        # 统一：统计时排除 0
-        series_by_method = [ _nonzero_series(s) for s in series_by_method_all ]
+        # 取各方式原始序列（按所选列）
+        series_by_method_all = [_get_series_by_method(df, q, k) for k in method_idx_for_plot]
+        series_by_method     = [_nonzero_series(s) for s in series_by_method_all]
 
         # ========== 面板1：正确率（±0.5%），0 已排除 ==========
         ax1 = axes[i][0]
-        correct_pct = []
-        n_valid = []
+        correct_pct, n_valid = [], []
         for s in series_by_method:
-            s_valid = s  # 已经去掉 0 和 NaN
+            s_valid = s
             n_valid.append(len(s_valid))
             if np.isnan(corr) or len(s_valid) == 0:
                 correct_pct.append(0.0)
@@ -238,7 +250,7 @@ def results():
         bars1 = ax1.bar(x_idx, correct_pct, width=BAR_WIDTH, edgecolor='black', alpha=0.8)
         ax1.set_ylim(0, 1)
         ax1.yaxis.set_major_formatter(_pct_formatter())
-        ax1.set_xticks(x_idx, METHOD_LABELS)
+        ax1.set_xticks(x_idx, plot_labels)
         ax1.set_title(f"{q} — Accuracy (±0.5%)", fontsize=12)
         ax1.grid(True, axis='y', linestyle='--', alpha=0.6)
         for rect, p in zip(bars1, correct_pct):
@@ -257,14 +269,27 @@ def results():
                 means_trim.append(s_trim.mean() if len(s_trim) > 0 else np.nan)
 
         heights = [corr] + means_trim
-        labels  = ["Correct"] + METHOD_LABELS
+
+
+        labels  = ["Correct"] + plot_labels
         x2 = np.arange(len(heights))
 
         bars2 = ax2.bar(x2, heights, width=BAR_WIDTH, edgecolor='black', alpha=0.85)
-        # 新增：正确答案水平线
+
         if np.isfinite(corr):
-            ax2.axhline(corr, color='black', linestyle='--', linewidth=1.6, alpha=0.9)
+            ax2.axhline(corr, color='blue', linestyle='--', linewidth=1.6, alpha=0.9)
+
+        # 先设置普通标签
         ax2.set_xticks(x2, labels, rotation=0)
+
+        # 再单独修改第一个标签 (Correct) 的样式
+        xtick_texts = ax2.get_xticklabels()
+        if xtick_texts:
+            xtick_texts[0].set_color('blue')
+            xtick_texts[0].set_fontweight('bold')
+
+
+
         ax2.yaxis.set_major_formatter(mtick.FuncFormatter(lambda v, pos: f"{v:,.1f}"))
         ax2.set_title(f"{q} — Mean (trim 3–97%) vs Correct", fontsize=12)
         ax2.grid(True, axis='y', linestyle='--', alpha=0.6)
@@ -279,27 +304,23 @@ def results():
         for rect, val in zip(bars2, heights):
             if np.isfinite(val):
                 ax2.text(rect.get_x()+rect.get_width()/2, rect.get_height(),
-                         f"{val:,.1f}", ha='center', va='bottom', fontsize=9, rotation=0)
+                         f"{val:,.1f}", ha='center', va='bottom', fontsize=9)
 
         # ========== 面板3：离群比例（> 正确值的 3%），0 已排除 ==========
         ax3 = axes[i][2]
-        outlier_pct = []
         if np.isnan(corr) or corr == 0:
-            # 如果正确答案缺失或为 0，离群率设为 0（避免除以 0）
-            outlier_pct = [0.0, 0.0, 0.0]
+            outlier_pct = [0.0] * len(series_by_method)
         else:
-            thr = OUTLIER_TOL_PCT * abs(corr)  # 3% 的绝对阈值
-            for s in series_by_method:
-                if len(s) == 0:
-                    outlier_pct.append(0.0)
-                else:
-                    m = (np.abs(s - corr) > thr).sum()
-                    outlier_pct.append(m / len(s))
+            thr = OUTLIER_TOL_PCT * abs(corr)
+            outlier_pct = [
+                (np.abs(s - corr) > thr).sum() / len(s) if len(s) > 0 else 0.0
+                for s in series_by_method
+            ]
 
         bars3 = ax3.bar(x_idx, outlier_pct, width=BAR_WIDTH, edgecolor='black', alpha=0.8)
         ax3.set_ylim(0, 1)
         ax3.yaxis.set_major_formatter(_pct_formatter())
-        ax3.set_xticks(x_idx, METHOD_LABELS)
+        ax3.set_xticks(x_idx, plot_labels)
         ax3.set_title(f"{q} — Outlier Rate (> {int(OUTLIER_TOL_PCT*100)}% from Correct)", fontsize=12)
         ax3.grid(True, axis='y', linestyle='--', alpha=0.6)
         for rect, p in zip(bars3, outlier_pct):
@@ -307,13 +328,11 @@ def results():
                      f"{p:.0%}", ha='center', va='bottom', fontsize=9)
 
         # 行尾样本量（非零有效 N）
-        axes[i][0].text(
-            0.02, -0.28,
-            f"Ns (nonzero): {METHOD_LABELS[0]}={len(series_by_method[0])}, "
-            f"{METHOD_LABELS[1]}={len(series_by_method[1])}, "
-            f"{METHOD_LABELS[2]}={len(series_by_method[2])}",
-            transform=axes[i][0].transAxes, fontsize=9, ha='left', va='top'
+        ns_text = "Ns (nonzero): " + ", ".join(
+            f"{lbl}={len(series_by_method[i])}" for i, lbl in enumerate(plot_labels)
         )
+        axes[i][0].text(0.02, -0.28, ns_text,
+                        transform=axes[i][0].transAxes, fontsize=9, ha='left', va='top')
 
         # 最后一行加上坐标轴标签
         if i == n_q - 1:

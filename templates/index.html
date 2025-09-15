@@ -38,14 +38,6 @@
       font-size: 0.9em;
       margin-top: 0.2em;
     }
-    .mode-banner {
-      margin: 1em 0 1.2em;
-      padding: 0.8em 1em;
-      border-left: 4px solid #cc0000;
-      background: #fff3f3;
-      color: #990000;
-      font-weight: bold;
-    }
     .disabled-input {
       background: #f2f2f2;
       cursor: not-allowed;
@@ -55,12 +47,6 @@
 </head>
 <body>
   <h1>Classroom Poll</h1>
-
-  {% if disable_first %}
-  <div class="mode-banner">
-      Odd &amp; Even disabled — display only (not editable).
-  </div>
-  {% endif %}
 
   <p style="color: #333; font-size: 1.1em;">
     <strong>Please express all numeric answers to one decimal place.</strong>
@@ -78,10 +64,10 @@
     </li>
     <li style="margin-bottom: 0.8em;">
       {% if disable_first %}
-        <span style="color: red; font-weight: bold;">Please input your answers only for your group</span>.  
+        <span style="color: red; font-weight: bold;">Please input your answers only for your group</span>.
         For example, if you are in Odd Team, enter your values under “Odd Team” <span style="color: red; font-weight: bold;">and input <code>0</code></span> under “Even Team”.
       {% else %}
-        <span style="color: red; font-weight: bold;">Please input your answers only for your section</span>.  
+        <span style="color: red; font-weight: bold;">Please input your answers only for your section</span>.
         For example, if you are in Section 1 or 2, enter your values under “Section 1 &amp; 2” <span style="color: red; font-weight: bold;">and input <code>0</code></span> under “Section 3 &amp; 4” and “Section 5 &amp; 6”.
       {% endif %}
     </li>
@@ -101,18 +87,20 @@
       ("Q3b2", "Question 3b.ii")
     ] %}
 
-    {# 动态切换标签 #}
     {% if disable_first %}
       {% set method_labels = ["Odd & Even", "Odd Team", "Even Team"] %}
+      {# 2section：只渲染 Odd Team / Even Team（索引 1、2） #}
+      {% set indices_to_render = [1, 2] %}
     {% else %}
       {% set method_labels = ["Section 1 & 2", "Section 3 & 4", "Section 5 & 6"] %}
+      {% set indices_to_render = [0, 1, 2] %}
     {% endif %}
 
     {% for key, label in questions %}
       <fieldset>
         <legend>{{ label }}</legend>
 
-        {% for i in range(3) %}
+        {% for i in indices_to_render %}
           <div class="response-group">
             <label for="{{ key }}_answer_{{ i+1 }}">{{ method_labels[i] }}:</label>
             <input
@@ -122,7 +110,6 @@
               step="any"
               required
               placeholder="Enter your answer"
-              {% if disable_first and i == 0 %} disabled class="disabled-input" {% endif %}
             >
             {% if key in ['Q2b2', 'Q3b2'] %}
               <small>Please input whole numbers, for example, if your answer is 15%, please just enter 15.0.</small>
@@ -155,8 +142,7 @@
       <select name="section" id="section" required>
         <option value="" disabled selected>Select your section</option>
         {% if disable_first %}
-          <option>Odd</option>
-          <option>Even</option>
+          <!-- 2section 模式下只保留这两个选项 -->
           <option>Odd Team</option>
           <option>Even Team</option>
         {% else %}
