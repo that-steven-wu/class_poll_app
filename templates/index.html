@@ -5,7 +5,6 @@
   <title>Classroom Poll</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <style>
-    /* 放大并加粗 legend 标题 */
     fieldset legend {
       font-size: 1.3em;
       font-weight: bold;
@@ -33,24 +32,40 @@
     .response-group {
       margin-bottom: 1em;
     }
-    /* 新增：红色提醒文字 */
     .response-group small {
       display: block;
       color: red;
       font-size: 0.9em;
       margin-top: 0.2em;
     }
+    .mode-banner {
+      margin: 1em 0 1.2em;
+      padding: 0.8em 1em;
+      border-left: 4px solid #cc0000;
+      background: #fff3f3;
+      color: #990000;
+      font-weight: bold;
+    }
+    .disabled-input {
+      background: #f2f2f2;
+      cursor: not-allowed;
+      opacity: 0.85;
+    }
   </style>
 </head>
 <body>
   <h1>Classroom Poll</h1>
 
-  <!-- 保留最前面的一行提示 -->
+  {% if disable_first %}
+  <div class="mode-banner">
+      Odd &amp; Even disabled — display only (not editable).
+  </div>
+  {% endif %}
+
   <p style="color: #333; font-size: 1.1em;">
     <strong>Please express all numeric answers to one decimal place.</strong>
   </p>
 
-  <!-- 有序列表指示 -->
   <ol style="color: #333; font-size: 1.1em; padding-left: 1.2em;">
     <li style="margin-bottom: 0.8em;">
       <span style="color: blue; font-weight: bold;">If you are not sure of an answer, please input <code>0</code>.</span>
@@ -62,7 +77,13 @@
       <span style="color: red; font-weight: bold;">Please DO NOT input percentage signs (%).</span> For example, if your answer is 15%, you should just input <code>15.0</code>.
     </li>
     <li style="margin-bottom: 0.8em;">
-      <span style="color: red; font-weight: bold;">Please input your answers only for your section</span>. For example, if you are in Section 1 or 2, enter your values under “Section 1 & 2” <span style="color: red; font-weight: bold;">and input <code>0</code></span> under “Section 3 & 4” and “Section 5 & 6” for each question.
+      {% if disable_first %}
+        <span style="color: red; font-weight: bold;">Please input your answers only for your group</span>.  
+        For example, if you are in Odd Team, enter your values under “Odd Team” <span style="color: red; font-weight: bold;">and input <code>0</code></span> under “Even Team”.
+      {% else %}
+        <span style="color: red; font-weight: bold;">Please input your answers only for your section</span>.  
+        For example, if you are in Section 1 or 2, enter your values under “Section 1 &amp; 2” <span style="color: red; font-weight: bold;">and input <code>0</code></span> under “Section 3 &amp; 4” and “Section 5 &amp; 6”.
+      {% endif %}
     </li>
   </ol>
 
@@ -79,10 +100,18 @@
       ("Q3b1", "Question 3b.i"),
       ("Q3b2", "Question 3b.ii")
     ] %}
-    {% set method_labels = ["Section 1 & 2", "Section 3 & 4", "Section 5 & 6"] %}
+
+    {# 动态切换标签 #}
+    {% if disable_first %}
+      {% set method_labels = ["Odd & Even", "Odd Team", "Even Team"] %}
+    {% else %}
+      {% set method_labels = ["Section 1 & 2", "Section 3 & 4", "Section 5 & 6"] %}
+    {% endif %}
+
     {% for key, label in questions %}
       <fieldset>
         <legend>{{ label }}</legend>
+
         {% for i in range(3) %}
           <div class="response-group">
             <label for="{{ key }}_answer_{{ i+1 }}">{{ method_labels[i] }}:</label>
@@ -93,6 +122,7 @@
               step="any"
               required
               placeholder="Enter your answer"
+              {% if disable_first and i == 0 %} disabled class="disabled-input" {% endif %}
             >
             {% if key in ['Q2b2', 'Q3b2'] %}
               <small>Please input whole numbers, for example, if your answer is 15%, please just enter 15.0.</small>
@@ -103,81 +133,50 @@
       <hr>
     {% endfor %}
 
-    <!-- 开放式文本问题 -->
     <fieldset>
       <legend>Question 4</legend>
-      <textarea
-        name="Q4_answer"
-        id="Q4_answer"
-        rows="5"
-        style="width: 100%;"
-        placeholder="Enter your response here"
-        required
-      ></textarea>
+      <textarea name="Q4_answer" id="Q4_answer" rows="5" style="width: 100%;" placeholder="Enter your response here" required></textarea>
     </fieldset>
     <hr>
     <fieldset>
       <legend>Question 5</legend>
-      <textarea
-        name="Q5_answer"
-        id="Q5_answer"
-        rows="5"
-        style="width: 100%;"
-        placeholder="Enter your response here"
-        required
-      ></textarea>
+      <textarea name="Q5_answer" id="Q5_answer" rows="5" style="width: 100%;" placeholder="Enter your response here" required></textarea>
     </fieldset>
     <hr>
 
-    <!-- 新增提示行 -->
     <p style="color: #333; font-size: 1em; font-style: italic;">
       If you are unsure about the answers in Question 4 &amp; 5, please leave it as <code>N/A</code>.
     </p>
 
-    <!-- 小标题：Submission Details -->
     <h2 style="margin-top: 2em; font-size: 1.2em; font-weight: bold;">Submission Details</h2>
 
-    <!-- 新增必填项：提交信息 -->
     <div class="submission-info">
       <label for="section">Section:</label>
       <select name="section" id="section" required>
         <option value="" disabled selected>Select your section</option>
-        <option>1</option>
-        <option>2</option>
-        <option>3</option>
-        <option>4</option>
-        <option>5</option>
-        <option>6</option>
+        {% if disable_first %}
+          <option>Odd</option>
+          <option>Even</option>
+          <option>Odd Team</option>
+          <option>Even Team</option>
+        {% else %}
+          <option>1</option>
+          <option>2</option>
+          <option>3</option>
+          <option>4</option>
+          <option>5</option>
+          <option>6</option>
+        {% endif %}
       </select>
 
       <label for="team_number">Team Number:</label>
-      <input
-        type="number"
-        name="team_number"
-        id="team_number"
-        min="1"
-        max="15"
-        required
-        placeholder="Enter your team number"
-      >
+      <input type="number" name="team_number" id="team_number" min="1" max="15" required placeholder="Enter your team number">
 
       <label for="first_name">Submission Person First Name:</label>
-      <input
-        type="text"
-        name="first_name"
-        id="first_name"
-        required
-        placeholder="Enter first name"
-      >
+      <input type="text" name="first_name" id="first_name" required placeholder="Enter first name">
 
       <label for="last_name">Submission Person Last Name:</label>
-      <input
-        type="text"
-        name="last_name"
-        id="last_name"
-        required
-        placeholder="Enter last name"
-      >
+      <input type="text" name="last_name" id="last_name" required placeholder="Enter last name">
     </div>
 
     <button type="submit">Submit All Responses</button>
