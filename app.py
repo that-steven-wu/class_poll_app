@@ -26,16 +26,13 @@ TEXT_CSV_PATH    = os.path.join(DATA_DIR, 'text_responses.csv')
 INFO_CSV_PATH    = os.path.join(DATA_DIR, 'submission_info.csv')
 LOCK_PATH        = os.path.join(DATA_DIR, 'io.lock')
 
-# 兼容保留：CLASS_DAY 不再用于过滤逻辑（除非你在下面的 filter 中开启回退）
-CLASS_DAY = os.environ.get("CLASS_DAY", "2025-08-04")
-
 CLASS_TZ  = os.environ.get("CLASS_TZ", "America/New_York")
 # 仅两种模式：'class_only'（按区间过滤）或 'all'（不过滤）
 SHOW_MODE = os.environ.get("SHOW_MODE", "class_only")  # 'class_only' or 'all'
 
 # 当 SHOW_MODE == 'class_only' 时，使用下面两个端点（纽约时间整日闭区间）
-CLASS_RANGE_START = os.environ.get("CLASS_RANGE_START", "").strip()
-CLASS_RANGE_END   = os.environ.get("CLASS_RANGE_END", "").strip()
+CLASS_RANGE_START = os.environ.get("CLASS_RANGE_START", "").strip()   # e.g. "2025-09-20"
+CLASS_RANGE_END   = os.environ.get("CLASS_RANGE_END", "").strip()     # e.g. "2025-09-20"
 
 # 模板模式（决定前端表单与作图标签）
 TEMPLATE_MODE = os.environ.get("TEMPLATE_MODE", "3section")   # '3section' or '2section'
@@ -45,9 +42,9 @@ OUTLIER_TRIM_LO_PCT = float(os.environ.get("OUTLIER_TRIM_LO_PCT", "10"))
 OUTLIER_TRIM_HI_PCT = float(os.environ.get("OUTLIER_TRIM_HI_PCT", "90"))
 TRIM_MIN_TAIL_PCT   = float(os.environ.get("TRIM_MIN_TAIL_PCT", str(OUTLIER_TRIM_LO_PCT)))
 
-# 方案C：离群阈值（相对正确答案的百分比）与统一柱宽
+# 离群阈值（相对正确答案的百分比）与统一柱宽
 OUTLIER_TOL_PCT = float(os.environ.get("OUTLIER_TOL_PCT", "3.0")) / 100.0  # 3%
-BAR_WIDTH       = float(os.environ.get("BAR_WIDTH", "0.3"))                 # 60%
+BAR_WIDTH       = float(os.environ.get("BAR_WIDTH", "0.3"))
 
 CHART_PATH = os.path.join('static', 'summary.png')
 
@@ -87,38 +84,35 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 # ----------------- 时间区间过滤：纽约时间整日闭区间 -----------------
 def _parse_local_date(date_str: str, tz_str: str) -> datetime:
-    """
-    把 YYYY-MM-DD 解析为本地时区当天 00:00:00。
-    """
-    d = datetime.fromisoformat(date_str).replace(tzinfo=ZoneInfo(tz_str))
-    return d.replace(hour=0, minute=0, second=0, microsecond=0)
+    """把 YYYY-MM-DD 解析到 tz_str 的当日 00:00:00。"""
+    return datetime.fromisoformat(date_str).replace(
+        tzinfo=ZoneInfo(tz_str), hour=0, minute=0, second=0, microsecond=0
+    )
 
 def filter_for_class_range(df: pd.DataFrame) -> pd.DataFrame:
     """
-    仅基于 SHOW_MODE / CLASS_RANGE_START / CLASS_RANGE_END 进行过滤：
-      - SHOW_MODE == "all"       -> 不过滤
-      - SHOW_MODE == "class_only" -> 用 [CLASS_RANGE_START, CLASS_RANGE_END] 闭区间（纽约时区整日）
-        * 当 start == end 时，等价于单日
-    端点均包含；若未配置 start/end，则保持不筛选（也可改为返回空或抛错，视需求）。
+    基于 SHOW_MODE / CLASS_RANGE_START / CLASS_RANGE_END 过滤：
+      - SHOW_MODE == "all"         -> 不过滤
+      - SHOW_MODE == "class_only"  -> 用 [START, END] 闭区间（纽约时区整日；START==END=单日）
+      - 若未配置 START/END，则不做过滤（需要严格可改为返回空集）
     """
     if 'ts' not in df.columns:
         return df.iloc[0:0]
 
     if SHOW_MODE != 'class_only':
-        return df  # SHOW_MODE=all
+        return df
 
     if not CLASS_RANGE_START or not CLASS_RANGE_END:
-        # 如需强约束可改成：return df.iloc[0:0]
+        # 严格模式可改成：return df.iloc[0:0]
         return df
 
     df = df.copy()
     df['ts'] = pd.to_datetime(df['ts'], utc=True, errors='coerce')
 
     start_local = _parse_local_date(CLASS_RANGE_START, CLASS_TZ)
-    end_local   = _parse_local_date(CLASS_RANGE_END, CLASS_TZ).replace(
+    end_local   = _parse_local_date(CLASS_RANGE_END,   CLASS_TZ).replace(
         hour=23, minute=59, second=59, microsecond=999999
     )
-
     start_utc = start_local.astimezone(ZoneInfo("UTC"))
     end_utc   = end_local.astimezone(ZoneInfo("UTC"))
 
@@ -325,11 +319,14 @@ def results():
         ax2.set_title(f"{q} — Mean (trim 3–97%) vs Correct", fontsize=12)
         ax2.grid(True, axis='y', linestyle='--', alpha=0.6)
 
+        # === 仅当差距超过 0.005% 时缩放 y 轴 ===
         finite_vals = [v for v in heights if np.isfinite(v)]
-        if len(finite_vals) >= 2:
+        if len(finite_vals) >= 2 and np.isfinite(corr):
             vmin, vmax = min(finite_vals), max(finite_vals)
-            if vmax > vmin:
-                pad = 0.10 * (vmax - vmin)
+            delta = vmax - vmin
+            tol = 0.00005 * abs(corr)   # 0.005% 相对阈值
+            if delta > tol:
+                pad = 0.10 * delta
                 ax2.set_ylim(vmin - pad, vmax + pad)
 
         for rect, val in zip(bars2, heights):
@@ -380,7 +377,8 @@ def results():
     # ============== 绘图结束 ==============
 
     return render_template('results.html', show_text=False, show_info=False,
-                           chart_url=url_for('static', filename='summary.png'), active_group=group, message=None)
+                           chart_url=url_for('static', filename='summary.png'),
+                           active_group=group, message=None)
 
 @app.route('/download')
 def download_data():
