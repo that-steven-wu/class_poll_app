@@ -319,18 +319,25 @@ def results():
         ax2.set_title(f"{q} — Mean (trim 3–97%) vs Correct", fontsize=12)
         ax2.grid(True, axis='y', linestyle='--', alpha=0.6)
 
-        # === 差距超过 0.005% 时缩放，否则强制从 0 开始 ===
+
+        # === 差距超过阈值才缩放；否则强制从 0 开始，并禁用后续自动缩放 ===
         finite_vals = [v for v in heights if np.isfinite(v)]
-        if len(finite_vals) >= 2 and np.isfinite(corr):
+        if len(finite_vals) >= 2:
             vmin, vmax = min(finite_vals), max(finite_vals)
             delta = vmax - vmin
-            tol = 0.00005 * abs(corr)   # 0.005% 相对阈值
+
+            # 相对阈值：0.005% * |corr|，再加一个绝对下限 0.05（与你的数值标注到 0.1 一致）
+            base = abs(corr) if np.isfinite(corr) else max(1.0, max(map(abs, finite_vals)))
+            tol = max(0.00005 * base, 0.2)
 
             if delta > tol:
                 pad = 0.10 * delta
                 ax2.set_ylim(vmin - pad, vmax + pad)
+                ax2.autoscale(False)  # 锁住
             else:
                 ax2.set_ylim(0, vmax * 1.1)
+                ax2.autoscale(False)  # 锁住
+
 
 
         for rect, val in zip(bars2, heights):
