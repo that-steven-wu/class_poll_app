@@ -26,9 +26,16 @@ TEXT_CSV_PATH    = os.path.join(DATA_DIR, 'text_responses.csv')
 INFO_CSV_PATH    = os.path.join(DATA_DIR, 'submission_info.csv')
 LOCK_PATH        = os.path.join(DATA_DIR, 'io.lock')
 
+# 兼容保留：CLASS_DAY 不再用于过滤逻辑（除非你在下面的 filter 中开启回退）
 CLASS_DAY = os.environ.get("CLASS_DAY", "2025-08-04")
+
 CLASS_TZ  = os.environ.get("CLASS_TZ", "America/New_York")
+# 仅两种模式：'class_only'（按区间过滤）或 'all'（不过滤）
 SHOW_MODE = os.environ.get("SHOW_MODE", "class_only")  # 'class_only' or 'all'
+
+# 当 SHOW_MODE == 'class_only' 时，使用下面两个端点（纽约时间整日闭区间）
+CLASS_RANGE_START = os.environ.get("CLASS_RANGE_START", "").strip()
+CLASS_RANGE_END   = os.environ.get("CLASS_RANGE_END", "").strip()
 
 # 模板模式（决定前端表单与作图标签）
 TEMPLATE_MODE = os.environ.get("TEMPLATE_MODE", "3section")   # '3section' or '2section'
@@ -78,16 +85,45 @@ CORRECT_ANSWERS = {
 os.makedirs(DATA_DIR, exist_ok=True)
 # ==========================================================
 
-def filter_for_day(df, day_str=CLASS_DAY, tz_str=CLASS_TZ):
+# ----------------- 时间区间过滤：纽约时间整日闭区间 -----------------
+def _parse_local_date(date_str: str, tz_str: str) -> datetime:
+    """
+    把 YYYY-MM-DD 解析为本地时区当天 00:00:00。
+    """
+    d = datetime.fromisoformat(date_str).replace(tzinfo=ZoneInfo(tz_str))
+    return d.replace(hour=0, minute=0, second=0, microsecond=0)
+
+def filter_for_class_range(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    仅基于 SHOW_MODE / CLASS_RANGE_START / CLASS_RANGE_END 进行过滤：
+      - SHOW_MODE == "all"       -> 不过滤
+      - SHOW_MODE == "class_only" -> 用 [CLASS_RANGE_START, CLASS_RANGE_END] 闭区间（纽约时区整日）
+        * 当 start == end 时，等价于单日
+    端点均包含；若未配置 start/end，则保持不筛选（也可改为返回空或抛错，视需求）。
+    """
     if 'ts' not in df.columns:
         return df.iloc[0:0]
+
+    if SHOW_MODE != 'class_only':
+        return df  # SHOW_MODE=all
+
+    if not CLASS_RANGE_START or not CLASS_RANGE_END:
+        # 如需强约束可改成：return df.iloc[0:0]
+        return df
+
     df = df.copy()
     df['ts'] = pd.to_datetime(df['ts'], utc=True, errors='coerce')
-    start_local = datetime.fromisoformat(day_str).replace(tzinfo=ZoneInfo(tz_str))
-    end_local   = start_local.replace(hour=23, minute=59, second=59)
-    start_utc   = start_local.astimezone(ZoneInfo("UTC"))
-    end_utc     = end_local.astimezone(ZoneInfo("UTC"))
+
+    start_local = _parse_local_date(CLASS_RANGE_START, CLASS_TZ)
+    end_local   = _parse_local_date(CLASS_RANGE_END, CLASS_TZ).replace(
+        hour=23, minute=59, second=59, microsecond=999999
+    )
+
+    start_utc = start_local.astimezone(ZoneInfo("UTC"))
+    end_utc   = end_local.astimezone(ZoneInfo("UTC"))
+
     return df[(df['ts'] >= start_utc) & (df['ts'] <= end_utc)]
+# ---------------------------------------------------------
 
 @app.route('/')
 def index():
@@ -161,8 +197,7 @@ def results():
         if os.path.exists(INFO_CSV_PATH):
             with FileLock(LOCK_PATH, timeout=10):
                 df_info = pd.read_csv(INFO_CSV_PATH)
-            if SHOW_MODE == 'class_only':
-                df_info = filter_for_day(df_info)
+            df_info = filter_for_class_range(df_info)
             df_info = df_info.sort_values(by=['section','team_number','first_name','last_name'])
             info_rows = df_info.to_dict(orient='records')
         else:
@@ -181,8 +216,7 @@ def results():
         if os.path.exists(TEXT_CSV_PATH):
             with FileLock(LOCK_PATH, timeout=10):
                 df_text = pd.read_csv(TEXT_CSV_PATH)
-            if SHOW_MODE == 'class_only':
-                df_text = filter_for_day(df_text)
+            df_text = filter_for_class_range(df_text)
             answers = df_text[f"{text_q}_answer"].fillna('N/A').tolist()
         else:
             answers = []
@@ -206,11 +240,11 @@ def results():
                                chart_url=None, message="No submissions yet.", active_group=group)
     with FileLock(LOCK_PATH, timeout=10):
         df = pd.read_csv(NUMERIC_CSV_PATH)
-    if SHOW_MODE == 'class_only':
-        df = filter_for_day(df)
+
+    df = filter_for_class_range(df)
     if df.empty:
         return render_template('results.html', show_text=False, show_info=False,
-                               chart_url=None, message="No data for selected day.", active_group=group)
+                               chart_url=None, message="No data in selected time window.", active_group=group)
 
     # ============== 新版绘图：每题三面板 ==============
     n_q = len(keys)
@@ -270,7 +304,6 @@ def results():
 
         heights = [corr] + means_trim
 
-
         labels  = ["Correct"] + plot_labels
         x2 = np.arange(len(heights))
 
@@ -287,8 +320,6 @@ def results():
         if xtick_texts:
             xtick_texts[0].set_color('blue')
             xtick_texts[0].set_fontweight('bold')
-
-
 
         ax2.yaxis.set_major_formatter(mtick.FuncFormatter(lambda v, pos: f"{v:,.1f}"))
         ax2.set_title(f"{q} — Mean (trim 3–97%) vs Correct", fontsize=12)
@@ -365,7 +396,11 @@ def download_data():
 
 if __name__ == '__main__':
     # 启动时打印当前模式与阈值，便于确认
-    print("TEMPLATE_MODE =", TEMPLATE_MODE)
+    print("TEMPLATE_MODE       =", TEMPLATE_MODE)
+    print("SHOW_MODE           =", SHOW_MODE)
+    print("CLASS_RANGE_START   =", CLASS_RANGE_START)
+    print("CLASS_RANGE_END     =", CLASS_RANGE_END)
+    print("CLASS_TZ            =", CLASS_TZ)
     print("OUTLIER_TRIM_LO_PCT =", OUTLIER_TRIM_LO_PCT)
     print("OUTLIER_TRIM_HI_PCT =", OUTLIER_TRIM_HI_PCT)
     print("TRIM_MIN_TAIL_PCT   =", TRIM_MIN_TAIL_PCT)
